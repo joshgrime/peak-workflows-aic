@@ -1,0 +1,55 @@
+name: safety-stock
+triggers:
+  - cron: "20 0 * * *"
+steps:
+  prepare-output-tables:
+    type: standard
+    imageId: {{ imageId }}
+    command: "python scripts/safety_stock/drop_tmp_table.py"
+    resources:
+      instanceTypeId: 21
+      storage: "10GB"
+    clearImageCache: true
+    stepTimeout: 600
+  {% for split_num in range(num_splits | int) %}
+  step-{{split_num}}:
+    type: standard
+    imageId: {{ imageId }}
+    command: "python scripts/safety_stock/safety_stock.py"
+    resources:
+      instanceTypeId: 31
+      storage: "20GB"
+    clearImageCache: true
+    stepTimeout: 36000
+    parents:
+      - prepare-output-tables
+    parameters:
+      env:
+        SPLIT_NUM: '{{ split_num }}'
+        N_SPLITS: '{{ num_splits }}'
+  {% endfor %}
+  combine-outputs:
+    type: standard
+    imageId: {{ imageId }}
+    command: "python scripts/safety_stock/upsert_results.py"
+    resources:
+      instanceTypeId: 21
+      storage: "10GB"
+    clearImageCache: true
+    stepTimeout: 3600
+    parents:
+    {% for split_num in range(num_splits | int) %}
+      - step-{{ split_num }}
+    {% endfor %}
+  calculate-metrics:
+    type: standard
+    imageId: {{ imageId }}
+    command: "python inv_opt/safety_stock/metrics.py"
+    resources:
+      instanceTypeId: 21
+      storage: "10GB"
+    clearImageCache: true
+    stepTimeout: 1800
+    parents:
+      - combine-outputs
+
